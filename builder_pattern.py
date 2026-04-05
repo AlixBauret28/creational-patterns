@@ -1,16 +1,89 @@
-"""
-Exercise 2: Builder Pattern — Employee Onboarding System
-
-The Builder Pattern lets us construct complex objects step by step,
-with readable chained method calls, instead of a massive constructor.
-"""
-
+from __future__ import annotations
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Dict, Optional, Type
+import json
 
 
-# The final object we want to build.
-# frozen=True means once created, it cannot be modified.
+# Exercise 1
+
+class PaymentProcessor(ABC):
+    @abstractmethod
+    def validate(self, details: dict) -> Optional[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def process(self, amount: float, details: dict) -> dict:
+        raise NotImplementedError
+
+
+class CreditCardProcessor(PaymentProcessor):
+    def validate(self, details: dict) -> Optional[str]:
+        card_number = details.get("card_number")
+        cvv = details.get("cvv")
+        if not card_number or len(str(card_number)) != 16:
+            return "Invalid card number"
+        if not cvv or len(str(cvv)) != 3:
+            return "Invalid CVV"
+        return None
+
+    def process(self, amount: float, details: dict) -> dict:
+        error = self.validate(details)
+        if error:
+            return {"success": False, "error": error}
+        fee = amount * 0.029
+        return {"success": True, "method": "credit_card", "amount": amount + fee, "fee": fee}
+
+
+class BankTransferProcessor(PaymentProcessor):
+    def validate(self, details: dict) -> Optional[str]:
+        iban = details.get("iban")
+        if not iban or len(str(iban)) < 15:
+            return "Invalid IBAN"
+        return None
+
+    def process(self, amount: float, details: dict) -> dict:
+        error = self.validate(details)
+        if error:
+            return {"success": False, "error": error}
+        fee = 1.50
+        return {"success": True, "method": "bank_transfer", "amount": amount + fee, "fee": fee}
+
+
+class PayPalProcessor(PaymentProcessor):
+    def validate(self, details: dict) -> Optional[str]:
+        email = details.get("email")
+        if not email or "@" not in str(email):
+            return "Invalid PayPal email"
+        return None
+
+    def process(self, amount: float, details: dict) -> dict:
+        error = self.validate(details)
+        if error:
+            return {"success": False, "error": error}
+        fee = amount * 0.034 + 0.30
+        return {"success": True, "method": "paypal", "amount": amount + fee, "fee": fee}
+
+
+class PaymentFactory:
+    def __init__(self) -> None:
+        self._registry: Dict[str, Type[PaymentProcessor]] = {
+            "credit_card": CreditCardProcessor,
+            "bank_transfer": BankTransferProcessor,
+            "paypal": PayPalProcessor,
+        }
+
+    def register(self, payment_type: str, processor_cls: Type[PaymentProcessor]) -> None:
+        self._registry[payment_type] = processor_cls
+
+    def get_processor(self, payment_type: str) -> PaymentProcessor:
+        cls = self._registry.get(payment_type)
+        if not cls:
+            raise ValueError(f"Unknown payment type: {payment_type}")
+        return cls()
+
+
+# Exercise 2: Builder Pattern
 
 @dataclass(frozen=True)
 class Employee:
@@ -33,13 +106,9 @@ class Employee:
     contract_type: str = "permanent"
 
 
-# The Builder: constructs an Employee piece by piece.
-# Each method returns 'self' so we can chain calls.
-
 class EmployeeBuilder:
-
-    def __init__(self):
-        self._data = {
+    def __init__(self) -> None:
+        self._d: Dict[str, Any] = {
             "manager_id": None,
             "phone": None,
             "address": None,
@@ -53,112 +122,113 @@ class EmployeeBuilder:
         }
 
     def with_name(self, first_name: str, last_name: str) -> "EmployeeBuilder":
-        self._data["first_name"] = first_name
-        self._data["last_name"] = last_name
+        self._d["first_name"] = first_name
+        self._d["last_name"] = last_name
         return self
 
     def with_email(self, email: str) -> "EmployeeBuilder":
-        self._data["email"] = email
+        self._d["email"] = email
         return self
 
-    def with_job(self, department: str, position: str, salary: float,
-                 start_date: str) -> "EmployeeBuilder":
-        self._data["department"] = department
-        self._data["position"] = position
-        self._data["salary"] = salary
-        self._data["start_date"] = start_date
+    def with_job(self, department: str, position: str, salary: float, start_date: str) -> "EmployeeBuilder":
+        self._d["department"] = department
+        self._d["position"] = position
+        self._d["salary"] = salary
+        self._d["start_date"] = start_date
         return self
 
-    def with_contact(self, phone: str = None, address: str = None,
-                     emergency_contact: str = None) -> "EmployeeBuilder":
+    def with_contact(self, phone: Optional[str] = None, address: Optional[str] = None,
+                     emergency_contact: Optional[str] = None) -> "EmployeeBuilder":
         if phone is not None:
-            self._data["phone"] = phone
+            self._d["phone"] = phone
         if address is not None:
-            self._data["address"] = address
+            self._d["address"] = address
         if emergency_contact is not None:
-            self._data["emergency_contact"] = emergency_contact
+            self._d["emergency_contact"] = emergency_contact
         return self
 
-    def with_equipment(self, laptop: bool = None,
-                       parking: bool = None) -> "EmployeeBuilder":
+    def with_equipment(self, laptop: Optional[bool] = None, parking: Optional[bool] = None) -> "EmployeeBuilder":
         if laptop is not None:
-            self._data["has_laptop"] = laptop
+            self._d["has_laptop"] = laptop
         if parking is not None:
-            self._data["has_parking"] = parking
+            self._d["has_parking"] = parking
         return self
 
-    def with_access(self, vpn: bool = None,
-                    admin: bool = None) -> "EmployeeBuilder":
+    def with_access(self, vpn: Optional[bool] = None, admin: Optional[bool] = None) -> "EmployeeBuilder":
         if vpn is not None:
-            self._data["has_vpn_access"] = vpn
+            self._d["has_vpn_access"] = vpn
         if admin is not None:
-            self._data["has_admin_rights"] = admin
+            self._d["has_admin_rights"] = admin
         return self
 
-    def with_meta(self, manager_id: int = None, office_location: str = None,
-                  contract_type: str = None) -> "EmployeeBuilder":
+    def with_meta(self, manager_id: Optional[int] = None, office_location: Optional[str] = None,
+                  contract_type: Optional[str] = None) -> "EmployeeBuilder":
         if manager_id is not None:
-            self._data["manager_id"] = manager_id
+            self._d["manager_id"] = manager_id
         if office_location is not None:
-            self._data["office_location"] = office_location
+            self._d["office_location"] = office_location
         if contract_type is not None:
-            self._data["contract_type"] = contract_type
+            self._d["contract_type"] = contract_type
         return self
 
-    def _validate(self):
-        """Make sure all required fields are present and valid."""
-        if not self._data.get("first_name") or not self._data.get("last_name"):
-            raise ValueError("First name and last name are required")
-
-        email = self._data.get("email", "")
-        if not email or "@" not in email:
-            raise ValueError("A valid email is required")
-
-        salary = self._data.get("salary")
-        if salary is None or salary < 0:
-            raise ValueError("Salary must be zero or positive")
-
-        for field in ("department", "position", "start_date"):
-            if not self._data.get(field):
-                raise ValueError(f"{field} is required")
+    def _validate(self) -> None:
+        if not self._d.get("first_name") or not self._d.get("last_name"):
+            raise ValueError("Name is required")
+        email = self._d.get("email")
+        if not email or "@" not in str(email):
+            raise ValueError("Valid email is required")
+        salary = self._d.get("salary")
+        if salary is None or float(salary) < 0:
+            raise ValueError("Salary cannot be negative")
+        for k in ("department", "position", "start_date"):
+            if not self._d.get(k):
+                raise ValueError(f"{k} is required")
 
     def build(self) -> Employee:
-        """Validate and create the final Employee object."""
         self._validate()
-        return Employee(**self._data)
+        return Employee(**self._d)
 
 
-# A preset: pre-configures the builder for a developer role.
 def developer_preset(builder: EmployeeBuilder) -> EmployeeBuilder:
-    return builder.with_access(vpn=True, admin=True).with_equipment(laptop=True)
+    return builder.with_access(admin=True, vpn=True).with_equipment(laptop=True)
 
 
-# --- Test it ---
-if __name__ == "__main__":
-    # Build a regular employee
-    emp1 = (EmployeeBuilder()
-            .with_name("Alice", "Martin")
-            .with_email("alice.martin@company.com")
-            .with_job("Marketing", "Analyst", 38000, "2026-05-01")
-            .with_contact(phone="0601020304")
-            .with_equipment(parking=True)
-            .build())
-    print("Employee 1:", emp1)
-    print()
+# Exercise 3
 
-    # Build a developer using the preset
-    builder = EmployeeBuilder()
-    builder = (builder
-               .with_name("Bob", "Leclerc")
-               .with_email("bob.leclerc@company.com")
-               .with_job("Engineering", "Backend Developer", 45000, "2026-04-15"))
-    builder = developer_preset(builder)
-    emp2 = builder.build()
-    print("Employee 2:", emp2)
-    print()
+class ConfigSource(ABC):
+    @abstractmethod
+    def load(self) -> dict:
+        raise NotImplementedError
 
-    # Try building with missing required fields
-    try:
-        bad = EmployeeBuilder().with_name("No", "Email").build()
-    except ValueError as e:
-        print("Validation error:", e)
+
+class JsonFileConfigSource(ConfigSource):
+    def __init__(self, path: str) -> None:
+        self._path = path
+
+    def load(self) -> dict:
+        with open(self._path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+
+class ConfigManager:
+    _instance: Optional["ConfigManager"] = None
+
+    def __init__(self, source: ConfigSource) -> None:
+        self._config = source.load()
+
+    @classmethod
+    def get_instance(cls, source: Optional[ConfigSource] = None) -> "ConfigManager":
+        if cls._instance is None:
+            if source is None:
+                source = JsonFileConfigSource("config.json")
+            cls._instance = cls(source)
+        return cls._instance
+
+    def get(self, key: str, default: Any = None) -> Any:
+        current: Any = self._config
+        for part in key.split("."):
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                return default
+        return current
